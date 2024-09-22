@@ -1,10 +1,12 @@
 package pong
 
 import "core:fmt"
+import b2 "vendor:box2d"
 import raylib "vendor:raylib"
 
 WINDOW_WIDTH: i32 : 800
 WINDOW_HEIGHT: i32 : 450
+SCALE: f32 : 450
 
 PLAYER_WIDTH: f32 : 20
 PLAYER_HEIGHT: f32 : 100
@@ -14,6 +16,7 @@ Paddle :: struct {
 	Size:     raylib.Vector2,
 	Color:    raylib.Color,
 	Speed:    f32,
+	BodyId:   b2.BodyId,
 }
 
 Ball :: struct {
@@ -21,16 +24,29 @@ Ball :: struct {
 	Radius:   f32,
 	Color:    raylib.Color,
 	Velocity: raylib.Vector2,
+	BodyId:   b2.BodyId,
 }
 
 main :: proc() {
 	raylib.InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Pong")
 
+	raylib.SetTargetFPS(60)
+
+	worldId := b2.CreateWorld(b2.DefaultWorldDef())
+
+	world_def := b2.DefaultBodyDef()
+	world_id := b2.CreateBody(worldId, world_def)
+	tile_polygon := b2.MakeSquare(50)
+
+	playerPaddleBodyId := b2.CreateBody(worldId, world_def)
+	shape_def := b2.DefaultShapeDef()
+	_ = b2.CreatePolygonShape(playerPaddleBodyId, shape_def, tile_polygon)
 	playerPaddle := Paddle {
 		raylib.Vector2{10, auto_cast (WINDOW_HEIGHT / 2) - auto_cast (PLAYER_HEIGHT / 2)},
 		raylib.Vector2{PLAYER_WIDTH, PLAYER_HEIGHT},
 		raylib.DARKBLUE,
 		.2,
+		playerPaddleBodyId,
 	}
 
 	enemyPaddle := Paddle {
@@ -41,16 +57,26 @@ main :: proc() {
 		raylib.Vector2{PLAYER_WIDTH, PLAYER_HEIGHT},
 		raylib.DARKBLUE,
 		.2,
+		b2.BodyId{},
 	}
 
+	ball_def := b2.DefaultBodyDef()
+	ball_def.type = b2.BodyType.dynamicBody
+	ballBodyId := b2.CreateBody(worldId, ball_def)
+	_ = b2.CreateCircleShape(ballBodyId, shape_def, {.5, .5})
 	ball := Ball {
 		raylib.Vector2{auto_cast (WINDOW_WIDTH / 2), auto_cast (WINDOW_HEIGHT / 2)},
 		10,
 		raylib.RED,
 		raylib.Vector2{.1, .1},
+		ballBodyId,
 	}
 
+
 	for !raylib.WindowShouldClose() {
+		dt := raylib.GetFrameTime()
+
+		b2.World_Step(worldId, dt, 8)
 
 		updatePaddle(&playerPaddle)
 		updateBall(&ball)
@@ -75,7 +101,14 @@ drawPaddle :: proc(paddle: Paddle) {
 }
 
 drawBall :: proc(ball: Ball) {
-	raylib.DrawCircleV(ball.Position, ball.Radius, ball.Color)
+	p := b2.Body_GetWorldPoint(ball.BodyId, {-0.5, 0.5})
+	radians := b2.Body_GetPosition(ball.BodyId)
+
+	ps := convertWorldToSreen(p)
+
+	fmt.println("p: ", p, ps)
+
+	raylib.DrawCircleV(ps, ball.Radius, ball.Color)
 }
 
 updatePaddle :: proc(paddle: ^Paddle) {
@@ -115,5 +148,12 @@ collisionCheck :: proc(ball: ^Ball, paddle: ^Paddle) {
 	) {
 		fmt.println("Collision detected")
 		ball.Velocity.x *= -1
+	}
+}
+
+convertWorldToSreen :: proc(p: b2.Vec2) -> raylib.Vector2 {
+	return {
+		SCALE * p.x + 0.5 * auto_cast (WINDOW_WIDTH),
+		0.5 * auto_cast (WINDOW_HEIGHT) - SCALE * p.y,
 	}
 }
